@@ -30,22 +30,37 @@ def convert_file(job_id: str, input_path: str, params: dict):
             
         # 2. PDF -> Image (JPG)
         elif target_format == "jpg" and ext == "pdf":
-            # Use ImageMagick or pdftoppm. 
-            # Ghostscript: gs -sDEVICE=jpeg -dTextAlphaBits=4 -dGraphicsAlphaBits=4 -r150 -o output-%d.jpg input.pdf
-            # This creates multiple files. We'll zip them or just return directory?
-            # For simple MVP, let's just return the first page or zip?
-            # Let's return the directory path if multiple, or expected output path.
-            # Our backend expects a single result file path usually.
-            # Let's start with single file output logic or create a zip.
-            # Simplified: Use convert to make one long jpg? No that's huge.
-            # Let's assume we return a ZIP of images.
-            # TODO: Add zip logic. For now, let's convert page 1 only as preview or use basic.
-            pass
+            # Use pdftoppm (poppler-utils) for high-quality conversion
+            # pdftoppm -jpeg -r 150 input.pdf output_dir/page
+            try:
+                subprocess.run([
+                    "pdftoppm",
+                    "-jpeg",
+                    "-r", "150",
+                    input_path,
+                    os.path.join(output_dir, "page")
+                ], check=True)
+            except FileNotFoundError:
+                # Fallback to ImageMagick if pdftoppm not found (though it should be)
+                subprocess.run([
+                    "convert",
+                    "-density", "150",
+                    input_path,
+                    "-quality", "90",
+                    os.path.join(output_dir, "page-%d.jpg")
+                ], check=True)
+
+            # Zip the resulting images
+            import shutil
+            # make_archive expects invalid extension, so we give base name
+            zip_base_name = f"/data/{job_id}_images"
+            shutil.make_archive(zip_base_name, 'zip', output_dir)
+            return f"{zip_base_name}.zip"
 
         # 3. Office -> PDF (Word/Excel -> PDF)
         if target_format == "pdf" and ext in ["docx", "doc", "xlsx", "pptx"]:
-            # LibreOffice headless
-            # soffice --headless --convert-to pdf input.docx --outdir /tmp/...
+            # LibreOffice conversion
+            # Note: soffice must be on PATH
             subprocess.run([
                 "soffice",
                 "--headless",
@@ -54,17 +69,24 @@ def convert_file(job_id: str, input_path: str, params: dict):
                 "--outdir", output_dir
             ], check=True)
             
-            # LibreOffice keeps filename but changes extension
-            # input name: foo.docx -> foo.pdf
+            # Soffice uses the same basename. Find the resulting PDF.
+            # It might handle spaces differently, so finding the only PDF in dir is safer or predicting name.
+            # Prediction:
             filename = os.path.basename(input_path)
             base = os.path.splitext(filename)[0]
-            output_path = os.path.join(output_dir, f"{base}.pdf")
-            return output_path
+            expected_output = os.path.join(output_dir, f"{base}.pdf")
+            
+            if os.path.exists(expected_output):
+                return expected_output
+            
+            # Fallback check
+            pdfs = [f for f in os.listdir(output_dir) if f.endswith(".pdf")]
+            if pdfs:
+                return os.path.join(output_dir, pdfs[0])
+            raise Exception("PDF output not found after conversion")
 
         # 4. PDF -> Word (docx)
         elif target_format == "docx" and ext == "pdf":
-             # LibreOffice supports PDF import? Yes but results vary.
-             # soffice --infilter="writer_pdf_import" --convert-to docx input.pdf
             subprocess.run([
                 "soffice",
                 "--headless",
@@ -76,12 +98,22 @@ def convert_file(job_id: str, input_path: str, params: dict):
             
             filename = os.path.basename(input_path)
             base = os.path.splitext(filename)[0]
-            output_path = os.path.join(output_dir, f"{base}.docx")
-            return output_path
+            expected_output = os.path.join(output_dir, f"{base}.docx")
+             
+            if os.path.exists(expected_output):
+                return expected_output
+                
+            # Fallback check
+            docs = [f for f in os.listdir(output_dir) if f.endswith(".docx")]
+            if docs:
+                 return os.path.join(output_dir, docs[0])
+            raise Exception("Word output not found after conversion")
 
-        raise ValueError(f"Conversion from {ext} to {target_format} not supported or NotImplemented")
+        raise ValueError(f"Conversion from {ext} to {target_format} not supported")
 
     except subprocess.CalledProcessError as e:
-        raise Exception(f"Conversion failed: {e}")
+        print(f"Subprocess failed: {e}")
+        raise Exception(f"Conversion process failed: {e}")
     except Exception as exc:
+        print(f"Worker exception: {exc}")
         raise exc

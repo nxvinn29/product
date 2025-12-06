@@ -30,8 +30,13 @@ def split_pdf(job_id: str, input_path: str, params: dict):
                 dst.close()
                 output_files.append(out_name)
         
-        # In a real app, we might zip these if there are many
-        # For this MVP, we return the directory path or list
-        return output_files
+        # Zip the results
+        import zipfile
+        zip_path = f"/data/{job_id}.zip"
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for file in output_files:
+                zipf.write(file, os.path.basename(file))
+        
+        return zip_path
     except Exception as exc:
         raise exc

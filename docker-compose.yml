@@ -1,4 +1,4 @@
-version: "3.8"
+
 
 services:
   # Frontend (Next.js)
@@ -9,7 +9,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_API_URL=http://localhost/api
     depends_on:
       - backend
 
@@ -20,8 +20,12 @@ services:
       dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
-    env_file:
-      - .env
+    secrets:
+      - postgres_user
+      - postgres_password
+      - minio_root_user
+      - minio_root_password
+      - jwt_secret
     depends_on:
       - redis
       - postgres
@@ -34,8 +38,11 @@ services:
     build:
       context: .
       dockerfile: workers/Dockerfile
-    env_file:
-      - .env
+    secrets:
+      - postgres_user
+      - postgres_password
+      - minio_root_user
+      - minio_root_password
     depends_on:
       - redis
       - postgres
@@ -47,7 +54,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
 
@@ -55,11 +62,14 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_DB: ${POSTGRES_DB:-pdfsimple}
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_user
+      - postgres_password
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
 
@@ -68,16 +78,62 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+    secrets:
+      - minio_root_user
+      - minio_root_password
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9002:9000"
+      - "9003:9001"
     volumes:
       - minio_data:/data
+
+  # Nginx Reverse Proxy (SSL termination)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx:/etc/nginx/certs
+    depends_on:
+      - frontend
+      - backend
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  # Grafana
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
 
 volumes:
   redis_data:
   pg_data:
   minio_data:
   pdf_data:
+
+secrets:
+  postgres_user:
+    file: ./secrets/postgres_user
+  postgres_password:
+    file: ./secrets/postgres_password
+  minio_root_user:
+    file: ./secrets/minio_root_user
+  minio_root_password:
+    file: ./secrets/minio_root_password
+  jwt_secret:
+    file: ./secrets/jwt_secret

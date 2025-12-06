@@ -1,0 +1,19 @@
+apiVersion: v2
+name: pdfsimple
+description: A Helm chart for PDFsimple (Web + API + Workers)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: postgresql
+    version: 12.5.0
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: 17.11.0
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
+  - name: minio
+    version: 12.6.0
+    repository: https://charts.bitnami.com/bitnami
+    condition: minio.enabled

@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pdfsimple.fullname" . }}-backend
+  labels:
+    {{- include "pdfsimple.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "pdfsimple.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "pdfsimple.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      serviceAccountName: {{ include "pdfsimple.serviceAccountName" . }}
+      containers:
+        - name: backend
+          image: "{{ .Values.image.repository }}-backend:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.auth.username }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.postgresql.auth.password }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.auth.database }}
+            # ... add other envs and secrets mapping
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

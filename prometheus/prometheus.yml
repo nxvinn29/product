@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "pdfsimple-backend"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["backend:8000"]
+
+  - job_name: "pdfsimple-celery"
+    static_configs:
+      # Assuming we export celery metrics via a sidecar or dedicated exporter
+      # For now, let's just placeholders or use redis-exporter if we had one.
+      # Using redis exporter is common.
+      - targets: []

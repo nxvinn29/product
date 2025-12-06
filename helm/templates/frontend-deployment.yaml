@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pdfsimple.fullname" . }}-frontend
+  labels:
+    {{- include "pdfsimple.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "pdfsimple.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        {{- include "pdfsimple.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend
+    spec:
+      serviceAccountName: {{ include "pdfsimple.serviceAccountName" . }}
+      containers:
+        - name: frontend
+          image: "{{ .Values.image.repository }}-frontend:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              # In K8s, frontend is client-side code running in browser.
+              # It connects to public Ingress URL, NOT internal cluster DNS.
+              # But for server-side rendering, it might need internal?
+              # Next.js mixed mode.
+              # Usually we point to the absolute public URL.
+              value: "https://{{ .Values.ingress.hosts | first | default \"localhost\" }}"
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

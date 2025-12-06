@@ -1,39 +1,107 @@
 import Head from 'next/head';
-import Image from 'next/image';
 import axios from 'axios';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import {
+    CloudArrowUpIcon,
+    DocumentDuplicateIcon,
+    ScissorsIcon,
+    ArrowsPointingInIcon,
+    ArrowPathIcon,
+    CheckCircleIcon,
+    XCircleIcon,
+    ArrowDownTrayIcon
+} from '@heroicons/react/24/outline';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+const tools = [
+    { id: 'merge', name: 'Merge', icon: DocumentDuplicateIcon, desc: 'Combine multiple PDFs into one.' },
+    { id: 'split', name: 'Split', icon: ScissorsIcon, desc: 'Separate PDF pages instantly.' },
+    { id: 'compress', name: 'Compress', icon: ArrowsPointingInIcon, desc: 'Reduce file size, keep quality.' },
+    { id: 'convert', name: 'Convert', icon: ArrowPathIcon, desc: 'Transform PDFs to other formats.' },
+    { id: 'ocr', name: 'OCR', icon: DocumentDuplicateIcon, desc: 'Make scanned PDFs searchable.' },
+];
 
 export default function Home() {
     const [files, setFiles] = useState<FileList | null>(null);
     const [tool, setTool] = useState("merge");
+    const [params, setParams] = useState<any>({});
     const [jobId, setJobId] = useState("");
     const [status, setStatus] = useState("");
     const [downloadUrl, setDownloadUrl] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    const [jobStats, setJobStats] = useState<any>({});
 
-    const pollStatus = async (id: string) => {
+    // Batch State
+    const [batchJobs, setBatchJobs] = useState<any[]>([]);
+    const [isBatch, setIsBatch] = useState(false);
+
+    const activeTool = tools.find(t => t.id === tool) || tools[0];
+
+    useEffect(() => {
+        // Reset state when tool changes
+        setFiles(null);
+        setJobId("");
+        setBatchJobs([]);
+        setIsBatch(false);
+        setStatus("");
+        setDownloadUrl("");
+        setError("");
+        setLoading(false);
+
+        // Default params
+        if (tool === 'convert') setParams({ target_format: 'pdf' });
+        else if (tool === 'compress') setParams({ level: 'medium' });
+        else setParams({});
+    }, [tool]);
+
+    const pollStatus = async (id: string, isBatchItem = false) => {
         try {
             const res = await axios.get(`${API_URL}/jobs/${id}`);
             const jobStatus = res.data.status;
-            setStatus(jobStatus);
 
+            if (isBatchItem) {
+                // Update item in batchJobs
+                setBatchJobs(prev => prev.map(j => {
+                    if (j.job_id === id) {
+                        const updated = { ...j, status: jobStatus };
+                        if (jobStatus === 'completed') updated.downloadUrl = `${API_URL}/jobs/${id}/result`;
+                        if (jobStatus === 'failed') updated.error = "Failed";
+                        return updated;
+                    }
+                    return j;
+                }));
+
+                if (jobStatus !== 'completed' && jobStatus !== 'failed') {
+                    setTimeout(() => pollStatus(id, true), 2000);
+                }
+                return;
+            }
+
+            setStatus(jobStatus);
             if (jobStatus === 'completed') {
                 setLoading(false);
                 setDownloadUrl(`${API_URL}/jobs/${id}/result`);
+
+                // If compress tool, we have stats in res.data.output
+                if (tool === 'compress' && res.data.output && typeof res.data.output === 'object') {
+                    const { original_size, compressed_size } = res.data.output;
+                    const saved = original_size > 0 ? ((original_size - compressed_size) / original_size * 100).toFixed(0) : 0;
+                    setJobStats({ original_size, compressed_size, saved_percent: saved });
+                }
             } else if (jobStatus === 'failed') {
                 setLoading(false);
                 setError("Job failed to process.");
             } else {
-                // Still processing, poll again in 1s
                 setTimeout(() => pollStatus(id), 1000);
             }
         } catch (err) {
             console.error(err);
-            setLoading(false);
-            setError("Error checking status");
+            if (!isBatchItem) {
+                setLoading(false);
+                setError("Error checking status");
+            }
         }
     };
 
@@ -44,168 +112,424 @@ export default function Home() {
         setError("");
         setDownloadUrl("");
         setJobId("");
+        setBatchJobs([]);
+
+        // Determine if batch
+        const _isBatch = files.length > 1 && tool !== 'merge';
+        setIsBatch(_isBatch);
 
         const formData = new FormData();
         formData.append("tool", tool);
-        formData.append("params", JSON.stringify({})); // Add actual params UI later
+        formData.append("params", JSON.stringify(params));
 
         for (let i = 0; i < files.length; i++) {
             formData.append("files", files[i]);
         }
 
         try {
-            const res = await axios.post(`${API_URL}/jobs`, formData, {
+            const endpoint = _isBatch ? `${API_URL}/jobs/batch` : `${API_URL}/jobs`;
+            const res = await axios.post(endpoint, formData, {
                 headers: { "Content-Type": "multipart/form-data" }
             });
-            const id = res.data.job_id;
-            setJobId(id);
-            setStatus("queued");
-            // Start polling
-            pollStatus(id);
-        } catch (err) {
+
+            if (_isBatch) {
+                setLoading(false); // We show list immediately
+                const jobs = res.data; // Array of {job_id, status, filename, error?}
+                setBatchJobs(jobs);
+
+                // Start polling for each queued job
+                jobs.forEach((j: any) => {
+                    if (j.job_id && (j.status === 'queued' || j.status === 'processing')) {
+                        pollStatus(j.job_id, true);
+                    }
+                });
+
+            } else {
+                const id = res.data.job_id;
+                setJobId(id);
+                setStatus("queued");
+                pollStatus(id);
+            }
+
+        } catch (err: any) {
             console.error(err);
             setLoading(false);
-            setError("Upload failed");
+            if (err.response && err.response.data && err.response.data.error) {
+                setError(err.response.data.error);
+            } else {
+                setError("Upload failed. Please try again.");
+            }
+            if (err.response && err.response.status === 429) {
+                setError("Rate limit exceeded. Please wait a moment.");
+            }
         }
     };
 
     return (
-        <div className="min-h-screen bg-gray-900 text-white font-sans selection:bg-pink-500 selection:text-white">
+        <div className="min-h-screen bg-[#0f172a] overflow-x-hidden selection:bg-violet-500 selection:text-white">
             <Head>
-                <title>PDFsimple – Smart Document Workspace</title>
+                <title>PDFsimple – Ultimate PDF Tools</title>
                 <meta name="description" content="Merge, split, compress, and convert PDFs with AI-powered speed." />
             </Head>
 
-            {/* Navbar */}
-            <nav className="w-full py-6 px-8 flex justify-between items-center max-w-7xl mx-auto">
-                <div className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-violet-500">
-                    PDFsimple
-                </div>
-                <div className="space-x-6 text-sm font-medium text-gray-300">
-                    <a href="#" className="hover:text-white transition">Tools</a>
-                    <a href="#" className="hover:text-white transition">Pricing</a>
-                    <a href="#" className="hover:text-white transition">Login</a>
-                </div>
-            </nav>
+            {/* Background Gradients */}
+            <div className="fixed inset-0 z-0 pointer-events-none">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-violet-600/20 rounded-full blur-[120px] animate-pulse"></div>
+                <div className="absolute top-[20%] right-[-10%] w-[35%] h-[35%] bg-fuchsia-600/20 rounded-full blur-[100px] animate-pulse delay-700"></div>
+                <div className="absolute bottom-[-10%] left-[20%] w-[30%] h-[30%] bg-cyan-600/20 rounded-full blur-[100px] animate-pulse delay-1000"></div>
+            </div>
 
-            {/* Hero Section */}
-            <main className="flex flex-col items-center justify-center p-4 mt-10">
-                <div className="text-center max-w-3xl mb-12">
-                    <h1 className="text-5xl md:text-7xl font-extrabold mb-6 tracking-tight">
-                        Master your <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500">Documents</span>
-                    </h1>
-                    <p className="text-xl text-gray-400 mb-8 leading-relaxed">
-                        The all-in-one workspace to merge, split, compress, and convert PDFs. <br className="hidden md:block" />
-                        Simple, fast, and secure.
-                    </p>
-                </div>
-
-                {/* Tool Card / Upload Area */}
-                <div className="w-full max-w-2xl bg-gray-800/50 backdrop-blur-xl border border-gray-700/50 p-8 rounded-2xl shadow-2xl relative overflow-hidden group">
-                    {/* Decorative gradient blob */}
-                    <div className="absolute -top-20 -right-20 w-64 h-64 bg-purple-600/20 rounded-full blur-3xl group-hover:bg-purple-600/30 transition duration-1000"></div>
-
-                    <div className="relative z-10">
-                        <div className="mb-8">
-                            <label className="block text-sm font-semibold text-gray-300 mb-3 uppercase tracking-wider">Choose Action</label>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                {['merge', 'split', 'compress', 'convert'].map((t) => (
-                                    <button
-                                        key={t}
-                                        onClick={() => setTool(t)}
-                                        className={`py-3 px-4 rounded-xl text-sm font-medium transition-all duration-300 border ${tool === t
-                                                ? 'bg-gradient-to-br from-purple-600 to-indigo-600 border-transparent text-white shadow-lg scale-105'
-                                                : 'bg-gray-700/50 border-gray-600 text-gray-400 hover:bg-gray-700 hover:text-white'
-                                            }`}
-                                    >
-                                        {t.charAt(0).toUpperCase() + t.slice(1)}
-                                    </button>
-                                ))}
-                            </div>
+            <div className="relative z-10 flex flex-col min-h-screen">
+                {/* Navbar */}
+                <nav className="w-full py-6 px-6 md:px-12 flex justify-between items-center backdrop-blur-sm border-b border-white/5">
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-violet-500/20">
+                            P
                         </div>
-
-                        <div className="mb-8">
-                            <label className="block text-sm font-semibold text-gray-300 mb-3 uppercase tracking-wider">Upload Files</label>
-                            <div className="relative group/upload">
-                                <input
-                                    type="file"
-                                    multiple
-                                    onChange={(e) => setFiles(e.target.files)}
-                                    className="block w-full text-sm text-gray-400
-                                      file:mr-4 file:py-3 file:px-6
-                                      file:rounded-full file:border-0
-                                      file:text-sm file:font-semibold
-                                      file:bg-gray-700 file:text-purple-400
-                                      hover:file:bg-gray-600
-                                      cursor-pointer border border-gray-600 rounded-xl bg-gray-900/50"
-                                />
-                            </div>
-                        </div>
-
-                        {error && (
-                            <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center">
-                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                {error}
-                            </div>
-                        )}
-
-                        {status && (
-                            <div className="mb-6">
-                                <div className="flex justify-between text-sm mb-2 text-gray-400">
-                                    <span>Status</span>
-                                    <span className="text-white font-medium capitalize">{status}</span>
-                                </div>
-                                <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
-                                    <div
-                                        className={`h-2 rounded-full transition-all duration-500 ${status === 'completed' ? 'bg-green-500 w-full' :
-                                                status === 'failed' ? 'bg-red-500 w-full' :
-                                                    'bg-purple-500 w-2/3 animate-pulse'
-                                            }`}
-                                    ></div>
-                                </div>
-                            </div>
-                        )}
-
-                        {downloadUrl ? (
-                            <a
-                                href={downloadUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="block w-full text-center py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg hover:shadow-green-500/25 hover:-translate-y-1 transition-all duration-300"
-                            >
-                                Download Your File
-                            </a>
-                        ) : (
-                            <button
-                                onClick={handleUpload}
-                                disabled={loading || !files}
-                                className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 ${loading || !files
-                                        ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                                        : 'bg-white text-gray-900 hover:bg-gray-100 hover:shadow-white/10 hover:-translate-y-1'
-                                    }`}
-                            >
-                                {loading ? (
-                                    <span className="flex items-center justify-center">
-                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-900" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                        Processing...
-                                    </span>
-                                ) : 'Start Magic ✨'}
-                            </button>
-                        )}
+                        <span className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
+                            PDFsimple
+                        </span>
                     </div>
-                </div>
+                </nav>
 
-                {/* Footer / Trust */}
-                <div className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-8 text-center text-gray-500 text-sm">
-                    <div>🔒 256-bit Encryption</div>
-                    <div>⚡ Lightning Fast</div>
-                    <div>📂 Auto-deleted in 2h</div>
-                    <div>✨ AI-Ready</div>
-                </div>
-            </main>
+                <main className="flex-grow container mx-auto px-4 py-12 md:py-20 flex flex-col items-center">
+
+                    {/* Hero Text */}
+                    <div className="text-center max-w-4xl mb-16">
+                        <h1 className="text-5xl md:text-7xl font-extrabold text-white mb-6 leading-tight">
+                            Simplify your <br />
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400 animate-gradient-x">
+                                Document Workflow
+                            </span>
+                        </h1>
+                        <p className="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto">
+                            The most powerful, secure, and blazing fast PDF tools on the web.
+                            Process your documents with locally-powered privacy principles.
+                        </p>
+                    </div>
+
+                    {/* Main Interface Component */}
+                    <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+                        {/* Sidebar / Tool Selection */}
+                        <div className="lg:col-span-4 space-y-4">
+                            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
+                                <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-4">Select Tool</h3>
+                                <div className="space-y-3">
+                                    {tools.map((t) => (
+                                        <button
+                                            key={t.id}
+                                            onClick={() => setTool(t.id)}
+                                            className={`w-full flex items-center p-4 rounded-2xl transition-all duration-300 group ${tool === t.id
+                                                ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25 ring-1 ring-white/20'
+                                                : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-transparent hover:border-white/10'
+                                                }`}
+                                        >
+                                            <div className={`p-2 rounded-lg mr-4 ${tool === t.id ? 'bg-white/20' : 'bg-gray-800 group-hover:bg-gray-700'}`}>
+                                                <t.icon className="w-6 h-6" />
+                                            </div>
+                                            <div className="text-left">
+                                                <div className="font-semibold">{t.name}</div>
+                                                <div className={`text-xs ${tool === t.id ? 'text-violet-200' : 'text-gray-500'}`}>{t.desc}</div>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Workspace Area */}
+                        <div className="lg:col-span-8">
+                            <div className="h-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 flex flex-col items-center justify-center relative overflow-hidden shadow-2xl">
+
+                                {/* Header for Workspace */}
+                                <div className="w-full flex justify-between items-center mb-8 border-b border-white/5 pb-6">
+                                    <div className="flex items-center gap-3">
+                                        <activeTool.icon className="w-8 h-8 text-violet-400" />
+                                        <h2 className="text-2xl font-bold text-white">{activeTool.name} PDF</h2>
+                                    </div>
+                                    <div className="text-sm text-gray-500 font-medium">
+                                        {status ? `Status: ${status}` : 'Ready to start'}
+                                    </div>
+                                </div>
+
+                                {/* Content */}
+                                <div className="w-full max-w-md space-y-6">
+
+                                    {/* Tool Options - Convert */}
+                                    {tool === 'convert' && (
+                                        <div className="mb-8 w-full">
+                                            <h3 className="text-center text-white font-bold text-xl mb-6">Convert To</h3>
+                                            <div className="flex justify-center gap-4">
+                                                {[
+                                                    { id: 'pdf', label: 'PDF', icon: DocumentDuplicateIcon },
+                                                    { id: 'docx', label: 'Word', icon: DocumentDuplicateIcon },
+                                                    { id: 'jpg', label: 'JPG', icon: CloudArrowUpIcon }
+                                                ].map((fmt) => (
+                                                    <button
+                                                        key={fmt.id}
+                                                        onClick={() => setParams({ ...params, target_format: fmt.id })}
+                                                        className={`flex flex-col items-center justify-center w-24 h-24 rounded-2xl border-2 transition-all duration-300 ${params.target_format === fmt.id
+                                                            ? 'bg-violet-600 border-violet-500 text-white shadow-lg shadow-violet-500/40 scale-105'
+                                                            : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:border-white/30'
+                                                            }`}
+                                                    >
+                                                        <span className="font-bold text-lg">{fmt.label}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tool Options - Compress (Resize UI) */}
+                                    {tool === 'compress' && !downloadUrl && (
+                                        <div className="mb-8 w-full text-center">
+                                            <h3 className="text-white font-bold text-2xl mb-6">Compress / Resize PDF</h3>
+
+                                            {/* Mode Selector */}
+                                            <div className="flex justify-center gap-4 mb-6">
+                                                <button
+                                                    onClick={() => setParams({ ...params, mode: 'reduce', level: 'medium' })}
+                                                    className={`px-6 py-2 rounded-full font-bold transition-all ${!params.mode || params.mode === 'reduce'
+                                                        ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/30'
+                                                        : 'bg-white/10 text-gray-400 hover:bg-white/20'
+                                                        }`}
+                                                >
+                                                    Reduce Size
+                                                </button>
+                                                <button
+                                                    onClick={() => setParams({ ...params, mode: 'increase' })}
+                                                    className={`px-6 py-2 rounded-full font-bold transition-all ${params.mode === 'increase'
+                                                        ? 'bg-pink-600 text-white shadow-lg shadow-pink-500/30'
+                                                        : 'bg-white/10 text-gray-400 hover:bg-white/20'
+                                                        }`}
+                                                >
+                                                    Increase Size
+                                                </button>
+                                            </div>
+
+                                            {/* Target Input */}
+                                            <div className="flex items-center justify-center gap-3 mb-2">
+                                                <span className="text-white font-medium">Target Size (KB):</span>
+                                                <input
+                                                    type="number"
+                                                    placeholder="100"
+                                                    className="w-24 bg-white text-slate-900 font-bold text-center px-2 py-2 rounded-md outline-none focus:ring-2 focus:ring-violet-500"
+                                                    onChange={(e) => setParams({ ...params, target_kb: e.target.value })}
+                                                />
+                                            </div>
+                                            <p className="text-gray-500 text-xs">
+                                                {params.mode === 'increase'
+                                                    ? 'We will add safe metadata to reach this size.'
+                                                    : 'We will attempt to compress to this size.'}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Upload Box */}
+                                    {!downloadUrl && (
+                                        <div className="relative group w-full">
+                                            <input
+                                                type="file"
+                                                multiple
+                                                onChange={(e) => setFiles(e.target.files)}
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                                                disabled={loading}
+                                            />
+                                            <div className="border-2 border-dashed border-violet-500/30 rounded-3xl p-12 text-center transition-all duration-300 bg-violet-500/5 group-hover:bg-violet-500/10 group-hover:border-violet-500/60">
+                                                <div className="w-16 h-16 bg-violet-600 rounded-lg flex items-center justify-center mx-auto mb-4 shadow-lg shadow-violet-600/30">
+                                                    <CloudArrowUpIcon className="w-8 h-8 text-white" />
+                                                </div>
+                                                <button className="bg-teal-700 hover:bg-teal-600 text-white font-bold py-2 px-6 rounded-lg transition-colors shadow-lg">
+                                                    Select PDF
+                                                </button>
+                                                <p className="text-sm text-gray-500 mt-4">
+                                                    or Drag & Drop PDF's Here
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Status / Error Messages */}
+                                    {error && (
+                                        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-200 flex items-center gap-3">
+                                            <XCircleIcon className="w-5 h-5 text-red-500" />
+                                            {error}
+                                        </div>
+                                    )}
+
+                                    {/* Action Button for Compress specific */}
+                                    {tool === 'compress' && !downloadUrl && files && (
+                                        <div className="w-full mt-4">
+                                            <button
+                                                onClick={handleUpload}
+                                                disabled={loading}
+                                                className="w-full py-4 rounded-xl font-bold text-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-xl transition-all"
+                                            >
+                                                {loading ? 'Compressing...' : 'Compress PDF'}
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Standard Action Button for others */}
+                                    {tool !== 'compress' && !downloadUrl && (
+                                        <button
+                                            onClick={handleUpload}
+                                            disabled={loading || !files}
+                                            className={`w-full py-4 rounded-xl font-bold text-lg transition-all duration-300 shadow-xl flex items-center justify-center gap-3 mt-6 ${loading || !files
+                                                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                                : 'bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-600 text-white hover:shadow-fuchsia-500/30 hover:-translate-y-1'
+                                                }`}
+                                        >
+                                            {loading ? (
+                                                <>
+                                                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                    Processing...
+                                                </>
+                                            ) : (
+                                                <>Start {activeTool.name}</>
+                                            )}
+                                        </button>
+                                    )}
+
+                                    {/* BATCH RESULT SCREEN */}
+                                    {isBatch && batchJobs.length > 0 && (
+                                        <div className="w-full space-y-4">
+                                            <h3 className="text-white font-bold text-xl mb-4">Batch Results</h3>
+                                            <div className="max-h-96 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                                                {batchJobs.map((job, idx) => (
+                                                    <div key={idx} className="bg-white/10 rounded-xl p-4 flex items-center justify-between">
+                                                        <div className="flex items-center gap-3 overflow-hidden">
+                                                            <div className="p-2 bg-white/10 rounded-lg">
+                                                                <activeTool.icon className="w-5 h-5 text-gray-300" />
+                                                            </div>
+                                                            <span className="text-white text-sm truncate max-w-[150px]">{job.filename || `File ${idx + 1}`}</span>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-3">
+                                                            {job.status === 'completed' ? (
+                                                                <a
+                                                                    href={job.downloadUrl}
+                                                                    target="_blank"
+                                                                    className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-xs font-bold rounded-lg flex items-center gap-2"
+                                                                >
+                                                                    <ArrowDownTrayIcon className="w-3 h-3" /> Download
+                                                                </a>
+                                                            ) : job.status === 'failed' ? (
+                                                                <span className="text-red-400 text-xs font-bold px-3 py-2 bg-red-400/10 rounded-lg">Failed</span>
+                                                            ) : (
+                                                                <span className="text-yellow-400 text-xs font-bold px-3 py-2 bg-yellow-400/10 rounded-lg animate-pulse">
+                                                                    {job.status || 'Queued'}...
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <button
+                                                onClick={() => { setBatchJobs([]); setIsBatch(false); setFiles(null); }}
+                                                className="w-full py-3 bg-white/5 hover:bg-white/10 text-gray-400 text-sm font-bold rounded-xl mt-4"
+                                            >
+                                                Process New Batch
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* STATUS / SUCCESS SCREEN (Single) */}
+                                    {!isBatch && downloadUrl && (
+                                        <div className="w-full text-center animate-fade-in">
+                                            {tool === 'compress' ? (
+                                                /* Customized Compress Success UI */
+                                                <div className="bg-white rounded-xl p-8 shadow-2xl">
+                                                    <h3 className="text-2xl font-bold text-slate-800 mb-6">PDFs have been compressed!</h3>
+
+                                                    <a
+                                                        href={downloadUrl}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="block w-full py-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-lg shadow-lg mb-8 flex items-center justify-center gap-2"
+                                                    >
+                                                        <ArrowDownTrayIcon className="w-6 h-6" />
+                                                        Download compressed PDF
+                                                    </a>
+
+                                                    {/* Stats Circle */}
+                                                    <div className="flex items-center justify-center gap-6">
+                                                        <div className="relative w-24 h-24 flex items-center justify-center">
+                                                            {/* Simple CSS circle for demo */}
+                                                            <div className="absolute inset-0 rounded-full border-4 border-slate-100"></div>
+                                                            <div className={`absolute inset-0 rounded-full border-4 ${jobStats.compressed_size > jobStats.original_size ? 'border-pink-500' : 'border-red-500'
+                                                                } border-t-transparent -rotate-45`}></div>
+                                                            <div className="text-center z-10">
+                                                                <div className="text-xl font-bold text-slate-800">
+                                                                    {jobStats.saved_percent ? `${Math.abs(jobStats.saved_percent)}%` : 'Done'}
+                                                                </div>
+                                                                <div className="text-[10px] text-slate-500 font-bold uppercase">
+                                                                    {jobStats.compressed_size > jobStats.original_size ? 'Increased' : 'Saved'}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="text-left">
+                                                            <p className="text-slate-600 font-medium">
+                                                                {jobStats.compressed_size > jobStats.original_size
+                                                                    ? 'Your PDF is now larger!'
+                                                                    : 'Your PDF is now smaller!'}
+                                                            </p>
+                                                            <p className="text-slate-800 font-bold">
+                                                                {jobStats.original_size ? (jobStats.original_size / 1024).toFixed(2) : '0'} KB
+                                                                <span className="text-slate-400 mx-2">→</span>
+                                                                {jobStats.compressed_size ? (jobStats.compressed_size / 1024).toFixed(2) : '0'} KB
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    <button
+                                                        onClick={() => setDownloadUrl("")}
+                                                        className="mt-8 text-slate-400 hover:text-slate-600 text-sm font-medium underline"
+                                                    >
+                                                        Process another file
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                /* Standard Success UI */
+                                                <div>
+                                                    <div className="mb-6">
+                                                        <CheckCircleIcon className="w-20 h-20 text-green-500 mx-auto mb-4" />
+                                                        <h3 className="text-2xl font-bold text-white mb-2">Ready for Download!</h3>
+                                                        <p className="text-gray-400">Your files have been processed successfully.</p>
+                                                    </div>
+                                                    <a
+                                                        href={downloadUrl}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="inline-flex items-center gap-2 py-4 px-8 rounded-xl font-bold text-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg shadow-green-500/20 hover:shadow-green-500/40 hover:-translate-y-1 transition-all duration-300"
+                                                    >
+                                                        <ArrowDownTrayIcon className="w-6 h-6" />
+                                                        Download File
+                                                    </a>
+                                                    <button
+                                                        onClick={() => setDownloadUrl("")}
+                                                        className="block w-full mt-4 text-gray-500 hover:text-white text-sm"
+                                                    >
+                                                        Process another file
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </main>
+
+                {/* Footer */}
+                <footer className="w-full py-8 text-center text-gray-600 text-sm">
+                    &copy; {new Date().getFullYear()} PDFsimple. All rights reserved. Locally Secured.
+                </footer>
+            </div>
         </div>
     );
 }
