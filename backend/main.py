@@ -193,6 +193,105 @@ async def create_job(
             except Exception as e:
                 jobs[job_id] = {"status": "failed", "error": str(e)}
 
+    elif tool == "pdf_to_pptx":
+         input_path = input_paths[0]
+         if celery_app:
+            task = celery_app.send_task("pdf_to_pptx", args=[job_id, input_path, job_params])
+            jobs[job_id] = {"status": "queued", "celery_id": task.id}
+         else:
+            jobs[job_id] = {"status": "failed", "error": "PDF to PPTX requires Docker environment"}
+
+    elif tool == "pdf_to_xlsx":
+         input_path = input_paths[0]
+         if celery_app:
+            task = celery_app.send_task("pdf_to_xlsx", args=[job_id, input_path, job_params])
+            jobs[job_id] = {"status": "queued", "celery_id": task.id}
+         else:
+            jobs[job_id] = {"status": "failed", "error": "PDF to XLSX requires Docker environment"}
+
+    elif tool == "pdf_to_html":
+         input_path = input_paths[0]
+         if celery_app:
+            task = celery_app.send_task("pdf_to_html", args=[job_id, input_path, job_params])
+            jobs[job_id] = {"status": "queued", "celery_id": task.id}
+         else:
+            jobs[job_id] = {"status": "failed", "error": "PDF to HTML requires Docker environment"}
+
+    elif tool == "images_to_pdf":
+         if celery_app:
+            task = celery_app.send_task("images_to_pdf", args=[job_id, input_paths, job_params])
+            jobs[job_id] = {"status": "queued", "celery_id": task.id}
+         else:
+            jobs[job_id] = {"status": "failed", "error": "Image to PDF conversion requires Docker environment"}
+
+    elif tool == "watermark":
+         input_path = input_paths[0]
+         if celery_app:
+            task = celery_app.send_task("add_watermark", args=[job_id, input_path, job_params])
+            jobs[job_id] = {"status": "queued", "celery_id": task.id}
+         else:
+            jobs[job_id] = {"status": "failed", "error": "Watermark operation requires Docker environment"}
+
+    elif tool == "page_numbers":
+         input_path = input_paths[0]
+         if celery_app:
+            task = celery_app.send_task("add_page_numbers", args=[job_id, input_path, job_params])
+            jobs[job_id] = {"status": "queued", "celery_id": task.id}
+         else:
+            jobs[job_id] = {"status": "failed", "error": "Page numbers operation requires Docker environment"}
+
+    elif tool == "rotate":
+         input_path = input_paths[0]
+         if celery_app:
+            task = celery_app.send_task("rotate_pages", args=[job_id, input_path, job_params])
+            jobs[job_id] = {"status": "queued", "celery_id": task.id}
+         else:
+            try:
+                from workers.rotate_pages_worker import rotate_pages
+                output = rotate_pages(job_id, input_path, job_params)
+                jobs[job_id] = {"status": "completed", "output": output}
+            except Exception as e:
+                jobs[job_id] = {"status": "failed", "error": str(e)}
+
+    elif tool == "metadata":
+         input_path = input_paths[0]
+         if celery_app:
+            task = celery_app.send_task("edit_metadata", args=[job_id, input_path, job_params])
+            jobs[job_id] = {"status": "queued", "celery_id": task.id}
+         else:
+            try:
+                from workers.metadata_worker import edit_metadata
+                output = edit_metadata(job_id, input_path, job_params)
+                jobs[job_id] = {"status": "completed", "output": output}
+            except Exception as e:
+                jobs[job_id] = {"status": "failed", "error": str(e)}
+
+    elif tool == "protect":
+         input_path = input_paths[0]
+         if celery_app:
+            task = celery_app.send_task("protect_pdf", args=[job_id, input_path, job_params])
+            jobs[job_id] = {"status": "queued", "celery_id": task.id}
+         else:
+            try:
+                from workers.protect_pdf_worker import protect_pdf
+                output = protect_pdf(job_id, input_path, job_params)
+                jobs[job_id] = {"status": "completed", "output": output}
+            except Exception as e:
+                jobs[job_id] = {"status": "failed", "error": str(e)}
+
+    elif tool == "unlock":
+         input_path = input_paths[0]
+         if celery_app:
+            task = celery_app.send_task("unlock_pdf", args=[job_id, input_path, job_params])
+            jobs[job_id] = {"status": "queued", "celery_id": task.id}
+         else:
+            try:
+                from workers.unlock_pdf_worker import unlock_pdf
+                output = unlock_pdf(job_id, input_path, job_params)
+                jobs[job_id] = {"status": "completed", "output": output}
+            except Exception as e:
+                jobs[job_id] = {"status": "failed", "error": str(e)}
+
     else:
         jobs[job_id] = {"status": "failed", "error": "Tool not supported"}
 
@@ -328,6 +427,78 @@ async def create_batch_job(
         elif tool == "convert":
              if celery_app:
                 task = celery_app.send_task("convert_file", args=[job_id, path, job_params])
+                jobs[job_id] = {"status": "queued", "celery_id": task.id}
+             else:
+                 responses.append({"job_id": job_id, "status": "failed", "error": "Celery required"})
+                 continue
+
+        elif tool == "pdf_to_pptx":
+             if celery_app:
+                task = celery_app.send_task("pdf_to_pptx", args=[job_id, path, job_params])
+                jobs[job_id] = {"status": "queued", "celery_id": task.id}
+             else:
+                 responses.append({"job_id": job_id, "status": "failed", "error": "Celery required"})
+                 continue
+
+        elif tool == "pdf_to_xlsx":
+             if celery_app:
+                task = celery_app.send_task("pdf_to_xlsx", args=[job_id, path, job_params])
+                jobs[job_id] = {"status": "queued", "celery_id": task.id}
+             else:
+                 responses.append({"job_id": job_id, "status": "failed", "error": "Celery required"})
+                 continue
+
+        elif tool == "pdf_to_html":
+             if celery_app:
+                task = celery_app.send_task("pdf_to_html", args=[job_id, path, job_params])
+                jobs[job_id] = {"status": "queued", "celery_id": task.id}
+             else:
+                 responses.append({"job_id": job_id, "status": "failed", "error": "Celery required"})
+                 continue
+
+        elif tool == "watermark":
+             if celery_app:
+                task = celery_app.send_task("add_watermark", args=[job_id, path, job_params])
+                jobs[job_id] = {"status": "queued", "celery_id": task.id}
+             else:
+                 responses.append({"job_id": job_id, "status": "failed", "error": "Celery required"})
+                 continue
+
+        elif tool == "page_numbers":
+             if celery_app:
+                task = celery_app.send_task("add_page_numbers", args=[job_id, path, job_params])
+                jobs[job_id] = {"status": "queued", "celery_id": task.id}
+             else:
+                 responses.append({"job_id": job_id, "status": "failed", "error": "Celery required"})
+                 continue
+
+        elif tool == "rotate":
+             if celery_app:
+                task = celery_app.send_task("rotate_pages", args=[job_id, path, job_params])
+                jobs[job_id] = {"status": "queued", "celery_id": task.id}
+             else:
+                 responses.append({"job_id": job_id, "status": "failed", "error": "Celery required"})
+                 continue
+
+        elif tool == "metadata":
+             if celery_app:
+                task = celery_app.send_task("edit_metadata", args=[job_id, path, job_params])
+                jobs[job_id] = {"status": "queued", "celery_id": task.id}
+             else:
+                 responses.append({"job_id": job_id, "status": "failed", "error": "Celery required"})
+                 continue
+
+        elif tool == "protect":
+             if celery_app:
+                task = celery_app.send_task("protect_pdf", args=[job_id, path, job_params])
+                jobs[job_id] = {"status": "queued", "celery_id": task.id}
+             else:
+                 responses.append({"job_id": job_id, "status": "failed", "error": "Celery required"})
+                 continue
+
+        elif tool == "unlock":
+             if celery_app:
+                task = celery_app.send_task("unlock_pdf", args=[job_id, path, job_params])
                 jobs[job_id] = {"status": "queued", "celery_id": task.id}
              else:
                  responses.append({"job_id": job_id, "status": "failed", "error": "Celery required"})

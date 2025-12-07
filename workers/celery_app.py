@@ -10,6 +10,16 @@ celery_app = Celery(
         "workers.convert_worker",
         "workers.compress_worker",
         "workers.ocr_worker",
+        "workers.pdf_to_pptx_worker",
+        "workers.pdf_to_xlsx_worker",
+        "workers.pdf_to_html_worker",
+        "workers.images_to_pdf_worker",
+        "workers.watermark_worker",
+        "workers.page_numbers_worker",
+        "workers.rotate_pages_worker",
+        "workers.metadata_worker",
+        "workers.protect_pdf_worker",
+        "workers.unlock_pdf_worker",
     ]
 )
 

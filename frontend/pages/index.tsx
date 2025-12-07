@@ -20,6 +20,16 @@ const tools = [
     { id: 'compress', name: 'Compress', icon: ArrowsPointingInIcon, desc: 'Reduce file size, keep quality.' },
     { id: 'convert', name: 'Convert', icon: ArrowPathIcon, desc: 'Transform PDFs to other formats.' },
     { id: 'ocr', name: 'OCR', icon: DocumentDuplicateIcon, desc: 'Make scanned PDFs searchable.' },
+    { id: 'pdf_to_pptx', name: 'PDF→PPTX', icon: ArrowPathIcon, desc: 'Convert PDF to PowerPoint.' },
+    { id: 'pdf_to_xlsx', name: 'PDF→XLSX', icon: ArrowPathIcon, desc: 'Extract tables to Excel.' },
+    { id: 'pdf_to_html', name: 'PDF→HTML', icon: ArrowPathIcon, desc: 'Convert PDF to HTML.' },
+    { id: 'images_to_pdf', name: 'Images→PDF', icon: ArrowPathIcon, desc: 'Combine images into PDF.' },
+    { id: 'watermark', name: 'Watermark', icon: DocumentDuplicateIcon, desc: 'Add text or image watermarks.' },
+    { id: 'page_numbers', name: 'Page Numbers', icon: DocumentDuplicateIcon, desc: 'Add page numbering.' },
+    { id: 'rotate', name: 'Rotate', icon: ArrowPathIcon, desc: 'Rotate PDF pages.' },
+    { id: 'metadata', name: 'Metadata', icon: DocumentDuplicateIcon, desc: 'Edit PDF metadata.' },
+    { id: 'protect', name: 'Protect', icon: DocumentDuplicateIcon, desc: 'Password protect PDFs.' },
+    { id: 'unlock', name: 'Unlock', icon: DocumentDuplicateIcon, desc: 'Remove PDF passwords.' },
 ];
 
 export default function Home() {
@@ -53,6 +63,16 @@ export default function Home() {
         // Default params
         if (tool === 'convert') setParams({ target_format: 'pdf' });
         else if (tool === 'compress') setParams({ level: 'medium' });
+        else if (tool === 'pdf_to_pptx') setParams({ dpi: 150, title: 'PDF Presentation' });
+        else if (tool === 'pdf_to_xlsx') setParams({ extract_text: false });
+        else if (tool === 'pdf_to_html') setParams({ mode: 'text', dpi: 150 });
+        else if (tool === 'images_to_pdf') setParams({ orientation: 'auto' });
+        else if (tool === 'watermark') setParams({ watermark_type: 'text', position: 'center', opacity: 0.3, rotation: 45, font_size: 60 });
+        else if (tool === 'page_numbers') setParams({ position: 'bottomright', format: '{number}' });
+        else if (tool === 'rotate') setParams({ angle: 90, pages: 'all' });
+        else if (tool === 'metadata') setParams({ action: 'set' });
+        else if (tool === 'protect') setParams({ password: '' });
+        else if (tool === 'unlock') setParams({ password: '' });
         else setParams({});
     }, [tool]);
 
@@ -278,6 +298,251 @@ export default function Home() {
                                                     </button>
                                                 ))}
                                             </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tool Options - PDF to PPTX */}
+                                    {tool === 'pdf_to_pptx' && (
+                                        <div className="mb-8 w-full text-center">
+                                            <h3 className="text-white font-bold text-xl mb-4">PDF to PowerPoint</h3>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="text-white text-sm font-medium">DPI:</label>
+                                                    <input
+                                                        type="number"
+                                                        placeholder="150"
+                                                        value={params.dpi || 150}
+                                                        onChange={(e) => setParams({ ...params, dpi: parseInt(e.target.value) })}
+                                                        className="w-full mt-1 bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-white text-sm font-medium">Presentation Title:</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="PDF Presentation"
+                                                        onChange={(e) => setParams({ ...params, title: e.target.value })}
+                                                        className="w-full mt-1 bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tool Options - PDF to XLSX */}
+                                    {tool === 'pdf_to_xlsx' && (
+                                        <div className="mb-8 w-full text-center">
+                                            <h3 className="text-white font-bold text-xl mb-4">PDF to Excel</h3>
+                                            <label className="flex items-center gap-3 text-white cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={params.extract_text || false}
+                                                    onChange={(e) => setParams({ ...params, extract_text: e.target.checked })}
+                                                    className="w-4 h-4"
+                                                />
+                                                <span className="text-sm">Also extract text content</span>
+                                            </label>
+                                        </div>
+                                    )}
+
+                                    {/* Tool Options - PDF to HTML */}
+                                    {tool === 'pdf_to_html' && (
+                                        <div className="mb-8 w-full text-center">
+                                            <h3 className="text-white font-bold text-xl mb-4">PDF to HTML</h3>
+                                            <div>
+                                                <label className="text-white text-sm font-medium">Mode:</label>
+                                                <select
+                                                    value={params.mode || 'text'}
+                                                    onChange={(e) => setParams({ ...params, mode: e.target.value })}
+                                                    className="w-full mt-1 bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none"
+                                                >
+                                                    <option value="text">Text (searchable)</option>
+                                                    <option value="images">Images (visual)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tool Options - Watermark */}
+                                    {tool === 'watermark' && (
+                                        <div className="mb-8 w-full text-center">
+                                            <h3 className="text-white font-bold text-xl mb-4">Add Watermark</h3>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="text-white text-sm font-medium">Type:</label>
+                                                    <select
+                                                        value={params.watermark_type || 'text'}
+                                                        onChange={(e) => setParams({ ...params, watermark_type: e.target.value })}
+                                                        className="w-full mt-1 bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none"
+                                                    >
+                                                        <option value="text">Text</option>
+                                                        <option value="image">Image</option>
+                                                    </select>
+                                                </div>
+                                                {(!params.watermark_type || params.watermark_type === 'text') && (
+                                                    <>
+                                                        <div>
+                                                            <label className="text-white text-sm font-medium">Text:</label>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="WATERMARK"
+                                                                onChange={(e) => setParams({ ...params, text: e.target.value })}
+                                                                className="w-full mt-1 bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-white text-sm font-medium">Font Size:</label>
+                                                            <input
+                                                                type="number"
+                                                                placeholder="60"
+                                                                value={params.font_size || 60}
+                                                                onChange={(e) => setParams({ ...params, font_size: parseInt(e.target.value) })}
+                                                                className="w-full mt-1 bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none"
+                                                            />
+                                                        </div>
+                                                    </>
+                                                )}
+                                                <div>
+                                                    <label className="text-white text-sm font-medium">Position:</label>
+                                                    <select
+                                                        value={params.position || 'center'}
+                                                        onChange={(e) => setParams({ ...params, position: e.target.value })}
+                                                        className="w-full mt-1 bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none"
+                                                    >
+                                                        <option value="center">Center</option>
+                                                        <option value="topleft">Top Left</option>
+                                                        <option value="topright">Top Right</option>
+                                                        <option value="bottomleft">Bottom Left</option>
+                                                        <option value="bottomright">Bottom Right</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tool Options - Page Numbers */}
+                                    {tool === 'page_numbers' && (
+                                        <div className="mb-8 w-full text-center">
+                                            <h3 className="text-white font-bold text-xl mb-4">Add Page Numbers</h3>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="text-white text-sm font-medium">Position:</label>
+                                                    <select
+                                                        value={params.position || 'bottomright'}
+                                                        onChange={(e) => setParams({ ...params, position: e.target.value })}
+                                                        className="w-full mt-1 bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none"
+                                                    >
+                                                        <option value="bottom">Center Bottom</option>
+                                                        <option value="bottomright">Bottom Right</option>
+                                                        <option value="bottomleft">Bottom Left</option>
+                                                        <option value="top">Center Top</option>
+                                                        <option value="topright">Top Right</option>
+                                                        <option value="topleft">Top Left</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-white text-sm font-medium">Format:</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="{number}"
+                                                        onChange={(e) => setParams({ ...params, format: e.target.value })}
+                                                        className="w-full mt-1 bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none text-sm"
+                                                    />
+                                                    <p className="text-xs text-gray-400 mt-1">Use {'{number}'} and {'{total}'}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tool Options - Rotate */}
+                                    {tool === 'rotate' && (
+                                        <div className="mb-8 w-full text-center">
+                                            <h3 className="text-white font-bold text-xl mb-4">Rotate Pages</h3>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="text-white text-sm font-medium">Angle:</label>
+                                                    <select
+                                                        value={params.angle || 90}
+                                                        onChange={(e) => setParams({ ...params, angle: parseInt(e.target.value) })}
+                                                        className="w-full mt-1 bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none"
+                                                    >
+                                                        <option value={90}>90°</option>
+                                                        <option value={180}>180°</option>
+                                                        <option value={270}>270°</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-white text-sm font-medium">Pages:</label>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="all"
+                                                        onChange={(e) => setParams({ ...params, pages: e.target.value })}
+                                                        className="w-full mt-1 bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none text-sm"
+                                                    />
+                                                    <p className="text-xs text-gray-400 mt-1">e.g., 'all', '1,2,3', or '1-5'</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tool Options - Metadata */}
+                                    {tool === 'metadata' && (
+                                        <div className="mb-8 w-full text-center">
+                                            <h3 className="text-white font-bold text-xl mb-4">Edit Metadata</h3>
+                                            <div className="space-y-3">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Title"
+                                                    onChange={(e) => setParams({ ...params, title: e.target.value })}
+                                                    className="w-full bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none text-sm"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Author"
+                                                    onChange={(e) => setParams({ ...params, author: e.target.value })}
+                                                    className="w-full bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none text-sm"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Subject"
+                                                    onChange={(e) => setParams({ ...params, subject: e.target.value })}
+                                                    className="w-full bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tool Options - Protect */}
+                                    {tool === 'protect' && (
+                                        <div className="mb-8 w-full text-center">
+                                            <h3 className="text-white font-bold text-xl mb-4">Protect PDF</h3>
+                                            <div className="space-y-3">
+                                                <input
+                                                    type="password"
+                                                    placeholder="User Password"
+                                                    onChange={(e) => setParams({ ...params, password: e.target.value })}
+                                                    className="w-full bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none text-sm"
+                                                />
+                                                <input
+                                                    type="password"
+                                                    placeholder="Owner Password (optional)"
+                                                    onChange={(e) => setParams({ ...params, owner_password: e.target.value })}
+                                                    className="w-full bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tool Options - Unlock */}
+                                    {tool === 'unlock' && (
+                                        <div className="mb-8 w-full text-center">
+                                            <h3 className="text-white font-bold text-xl mb-4">Unlock PDF</h3>
+                                            <input
+                                                type="password"
+                                                placeholder="PDF Password"
+                                                onChange={(e) => setParams({ ...params, password: e.target.value })}
+                                                className="w-full bg-white/10 text-white px-4 py-2 rounded-lg border border-white/20 focus:border-violet-500 outline-none text-sm"
+                                            />
                                         </div>
                                     )}
 
