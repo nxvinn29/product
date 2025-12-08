@@ -1,6 +1,6 @@
 # PDFsimple
 
-**PDFsimple** – a modern, free‑tier, open‑source online PDF toolkit.
+**PDFsimple** – a modern, free‑tier, open‑source online PDF toolkit..
 
 ## Overview
 - **MVP tools**: merge, split, compress, PDF ↔ Word, JPG ↔ PDF.
