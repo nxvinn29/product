@@ -22,4 +22,4 @@ docker compose up --build
 The UI will be available at `http://localhost:3000`.
 
 ## License
-MIT – feel free to fork and extend.
+MIT – feel free to fork and extend. 
